@@ -1,5 +1,5 @@
 FROM --platform=${TARGETPLATFORM:-linux/amd64} openfaas/of-watchdog:0.8.1 as watchdog
-FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.15-alpine3.12 as build
+FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:alpine as build
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -43,7 +43,6 @@ COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
 # add-in our unprivileged user
 COPY --from=build /etc/passwd /etc/group /etc/shadow /etc/
 
-RUN chown -R app /home/app
 # add-in our ca certificates
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
