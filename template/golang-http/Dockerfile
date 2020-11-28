@@ -1,12 +1,19 @@
-FROM --platform=${TARGETPLATFORM:-linux/amd64} openfaas/of-watchdog:0.8.0 as watchdog
-FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.13-alpine3.11 as build
+FROM --platform=${TARGETPLATFORM:-linux/amd64} openfaas/of-watchdog:0.8.1 as watchdog
+FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.15-alpine3.12 as build
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG TARGETOS
 ARG TARGETARCH
 
-RUN apk --no-cache add git
+
+ARG UID=1000
+ARG GID=1000
+
+# ignore non-pinned packages
+# hadolint ignore=DL3018
+RUN apk --no-cache add git tzdata ca-certificates \
+    && addgroup -g "$GID" -S app && adduser -u "$UID" -S -D -H -g app app
 
 ENV CGO_ENABLED=0
 
@@ -24,17 +31,21 @@ ARG GO111MODULE="off"
 ARG GOPROXY=""
 
 RUN CGO_ENABLED=${CGO_ENABLED} GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build --ldflags "-s -w" -a -installsuffix cgo -o handler .
+    go build --ldflags '-s -w -extldflags "-static"' -a -installsuffix cgo -o handler .
 RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go test handler/function/... -cover
 
-FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine:3.11
-# Add non root user and certs
-RUN apk --no-cache add ca-certificates \
-    && addgroup -S app && adduser -S -g app app \
-    && mkdir -p /home/app \
-    && chown app /home/app
+FROM scratch
 
 WORKDIR /home/app
+
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+
+# add-in our unprivileged user
+COPY --from=build /etc/passwd /etc/group /etc/shadow /etc/
+
+RUN chown -R app /home/app
+# add-in our ca certificates
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 COPY --from=build /go/src/handler/handler    .
 COPY --from=build /usr/bin/fwatchdog         .
